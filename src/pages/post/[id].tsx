@@ -1,7 +1,7 @@
 import { type NextPage } from "next";
 import Head from "next/head";
 
-const PostPage: NextPage = () => {
+const SinglePostPage: NextPage = () => {
   return (
     <>
       <Head>
@@ -18,4 +18,4 @@ const PostPage: NextPage = () => {
   );
 }
 
-export default PostPage;
+export default SinglePostPage;
