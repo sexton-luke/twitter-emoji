@@ -3,10 +3,20 @@ import { clerkClient } from "@clerk/nextjs";
 import { createTRPCRouter, privateProcedure, publicProcedure } from "~/server/api/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { Ratelimit } from "@upstash/ratelimit"; // for deno: see above
+import { Redis } from "@upstash/redis";
 
 const filterUserForClient = (user: User) => {
   return { id: user.id, username: user.username, profileImageUrl: user.profileImageUrl };
 }
+
+// Create a new ratelimiter, allowing 3 requests per minute
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(3, "1 s"),
+  analytics: true,
+  prefix: "@upstash/ratelimit",
+});
 
 export const postsRouter = createTRPCRouter({
   getAll: publicProcedure.query(async ({ ctx }) => {
@@ -38,16 +48,21 @@ export const postsRouter = createTRPCRouter({
       };
     });
   }),
-  create: privateProcedure.input(z.object({ content: z.string().emoji().min(1).max(280) })).mutation(async ({ ctx, input }) => {
-    const authorId = ctx.userId;
+  create: privateProcedure
+    .input(z.object({ content: z.string().emoji().min(1).max(280) }))
+    .mutation(async ({ ctx, input }) => {
+      const authorId = ctx.userId;
 
-    const post = await ctx.prisma.post.create({
-      data: {
-        authorId,
-        content: input.content,
-      },
-    });
+      const { success } = await ratelimit.limit(authorId);
+      if (!success) { throw new TRPCError({ code: "TOO_MANY_REQUESTS" }); }
 
-    return post;
-  }),
+      const post = await ctx.prisma.post.create({
+        data: {
+          authorId,
+          content: input.content,
+        },
+      });
+
+      return post;
+    }),
 });
